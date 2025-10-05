@@ -8,6 +8,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Auth;
+use Carbon\Carbon; // ✅ Tambahkan ini
 
 class GenerateSurat extends Command
 {
@@ -38,19 +39,21 @@ class GenerateSurat extends Command
             return 1;
         }
 
+        // ✅ Tambahkan path QR dummy agar tidak error
+        $qrCodePath = 'images/sample-qr.png';
+
         // Data untuk dimasukkan ke Blade
         $pdfData = [
-            'nomer_surat'      => $record->nomor_surat ?? '070/DISBUD/' . date('Y') . '/' . str_pad($record->id, 3, '0', STR_PAD_LEFT),
-            'id_pengajuan'     => $record->id,
-            'mahasiswa_name'   => $record->mahasiswa->user->name ?? '-',
-            'nim'              => $record->mahasiswa->nim ?? '-',
-            'pembimbing_name'  => $record->pembimbing->user->name ?? '-',
-            'tanggal_mulai'    => $record->tanggal_mulai ? $record->tanggal_mulai->format('d F Y') : '-',
-            'tanggal_selesai'  => $record->tanggal_selesai ? $record->tanggal_selesai->format('d F Y') : '-',
-            'bidang_diminati'  => $record->bidang_diminati ?? '-',
-            'qr_code_path'     => public_path('images/sample-qr.png'),
-            'verified_by'      => $adminUser->name ?? 'Admin',
-            'template'         => $template,
+            'id_pengajuan' => $record->id,
+            'mahasiswa_name' => $record->mahasiswa->user->name,
+            'nim' => $record->mahasiswa->nim,
+            'pembimbing_name' => $record->pembimbing->user->name ?? 'N/A',
+            'tanggal_mulai' => Carbon::parse($record->tanggal_mulai)->format('d F Y'),
+            'tanggal_selesai' => Carbon::parse($record->tanggal_selesai)->format('d F Y'),
+            'bidang_diminati' => $record->bidang_diminati,
+            'qr_code_path' => public_path($qrCodePath),
+            'tanggal_verifikasi' => now()->format('d F Y'),
+            'verified_by' => $adminUser->name ?? 'Admin',
         ];
 
         // Render Blade dari template surat penerimaan
@@ -68,3 +71,4 @@ class GenerateSurat extends Command
         return 0;
     }
 }
+

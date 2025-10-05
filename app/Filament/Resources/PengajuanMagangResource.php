@@ -635,7 +635,6 @@ class PengajuanMagangResource extends Resource
 
                             // Prepare data for the template
                             $pdfData = [
-                                'nomer_surat' => $nomer_surat_final,
                                 'mahasiswa_name' => $record->mahasiswa->user->name,
                                 'nim' => $record->mahasiswa->nim,
                                 'pembimbing_name' => $record->pembimbing->user->name ?? 'N/A',
