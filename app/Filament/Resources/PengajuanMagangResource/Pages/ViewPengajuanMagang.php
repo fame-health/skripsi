@@ -64,7 +64,10 @@ class ViewPengajuanMagang extends ViewRecord
                 ->action(function (array $data) use ($user) {
                     try {
                         $this->record->status = $data['status'];
-                        $this->record->alasan_penolakan = $data['status'] === \App\Models\PengajuanMagang::STATUS_DITOLAK ? $data['alasan_penolakan'] : null;
+                        $this->record->alasan_penolakan =
+                            $data['status'] === \App\Models\PengajuanMagang::STATUS_DITOLAK
+                                ? $data['alasan_penolakan']
+                                : null;
                         $this->record->tanggal_verifikasi = Carbon::now();
                         $this->record->verified_by = $user->id;
 
@@ -83,23 +86,17 @@ class ViewPengajuanMagang extends ViewRecord
                             $qrCodePath = 'pengajuan-magang/qr-codes/qr_' . $this->record->id . '.png';
                             Storage::disk('public')->put($qrCodePath, $qrCodeImage->getString());
 
-                            // Fetch the active template for 'penerimaan'
+                            // Ambil template aktif
                             $template = \App\Models\TemplateSurat::where('jenis_surat', \App\Models\TemplateSurat::JENIS_PENERIMAAN)
                                 ->where('is_active', true)
                                 ->first();
 
                             if (!$template) {
-                                throw new \Exception('No active template found for penerimaan');
+                                throw new \Exception('Tidak ada template surat penerimaan aktif!');
                             }
 
-                            // Generate nomer_surat with format [nomer_surat_template]/[3 digit akhir NIM]/[tahun sekarang]
-                            $nim_akhir = substr($this->record->mahasiswa->nim, -3);
-                            $tahun = now()->format('Y');
-                            $nomer_surat_final = $template->nomer_surat . '/' . $nim_akhir . '/' . $tahun;
-
-                            // Prepare data for the template
+                            // Siapkan data untuk template
                             $pdfData = [
-                                'nomer_surat' => $nomer_surat_final,
                                 'mahasiswa_name' => $this->record->mahasiswa->user->name,
                                 'nim' => $this->record->mahasiswa->nim,
                                 'pembimbing_name' => $this->record->pembimbing->user->name ?? 'N/A',
@@ -109,15 +106,18 @@ class ViewPengajuanMagang extends ViewRecord
                                 'qr_code_path' => Storage::disk('public')->path($qrCodePath),
                                 'tanggal_verifikasi' => now()->format('d F Y'),
                                 'verified_by' => $user->name,
+                                'id_pengajuan' => $this->record->id,
                             ];
 
-                            // Render the template content
+                            // Render Blade template
                             $renderedContent = Blade::render($template->content_template, $pdfData);
 
                             // Generate PDF
                             $pdf = Pdf::loadHTML($renderedContent);
                             $pdfPath = 'pengajuan-magang/surat-balasan/surat_balasan_' . $this->record->id . '.pdf';
                             Storage::disk('public')->put($pdfPath, $pdf->output());
+
+                            // Simpan path ke database
                             $this->record->surat_balasan = $pdfPath;
                         }
 
@@ -129,7 +129,14 @@ class ViewPengajuanMagang extends ViewRecord
                             ->success()
                             ->send();
 
-                        $this->refreshFormData(['status', 'alasan_penolakan', 'tanggal_verifikasi', 'verified_by', 'surat_balasan', 'pembimbing_id']);
+                        $this->refreshFormData([
+                            'status',
+                            'alasan_penolakan',
+                            'tanggal_verifikasi',
+                            'verified_by',
+                            'surat_balasan',
+                            'pembimbing_id',
+                        ]);
                     } catch (\Exception $e) {
                         \Illuminate\Support\Facades\Log::error('Verifikasi Error: ' . $e->getMessage());
                         Notification::make()
@@ -145,15 +152,17 @@ class ViewPengajuanMagang extends ViewRecord
                 ->modalSubmitActionLabel('Simpan Verifikasi');
         }
 
+        // Tombol edit / hapus
         if ($isAdmin || ($isMahasiswa && $this->record->status === \App\Models\PengajuanMagang::STATUS_PENDING)) {
             $actions[] = \Filament\Actions\EditAction::make();
             $actions[] = \Filament\Actions\DeleteAction::make()->requiresConfirmation();
         }
 
+        // Tombol kembali
         $actions[] = Action::make('back')
             ->label('Kembali')
             ->icon('heroicon-o-arrow-left')
-            ->url(fn () => $this->getResource()::getUrl('index'))
+            ->url(fn() => $this->getResource()::getUrl('index'))
             ->color('gray');
 
         return $actions;
@@ -170,12 +179,8 @@ class ViewPengajuanMagang extends ViewRecord
             ->schema([
                 Section::make('Informasi Mahasiswa')
                     ->schema([
-                        TextEntry::make('mahasiswa.nim')
-                            ->label('NIM')
-                            ->weight(FontWeight::Medium),
-                        TextEntry::make('mahasiswa.user.name')
-                            ->label('Nama Mahasiswa')
-                            ->weight(FontWeight::Medium),
+                        TextEntry::make('mahasiswa.nim')->label('NIM')->weight(FontWeight::Medium),
+                        TextEntry::make('mahasiswa.user.name')->label('Nama Mahasiswa')->weight(FontWeight::Medium),
                         TextEntry::make('pembimbing.user.name')
                             ->label('Nama Pembimbing')
                             ->default('Belum Ditentukan')
@@ -186,21 +191,10 @@ class ViewPengajuanMagang extends ViewRecord
 
                 Section::make('Detail Pengajuan')
                     ->schema([
-                        TextEntry::make('tanggal_mulai')
-                            ->label('Tanggal Mulai')
-                            ->date('d F Y')
-                            ->weight(FontWeight::Medium),
-                        TextEntry::make('tanggal_selesai')
-                            ->label('Tanggal Selesai')
-                            ->date('d F Y')
-                            ->weight(FontWeight::Medium),
-                        TextEntry::make('durasi_magang')
-                            ->label('Durasi Magang')
-                            ->suffix(' minggu')
-                            ->weight(FontWeight::Medium),
-                        TextEntry::make('bidang_diminati')
-                            ->label('Bidang Diminati')
-                            ->weight(FontWeight::Medium),
+                        TextEntry::make('tanggal_mulai')->label('Tanggal Mulai')->date('d F Y')->weight(FontWeight::Medium),
+                        TextEntry::make('tanggal_selesai')->label('Tanggal Selesai')->date('d F Y')->weight(FontWeight::Medium),
+                        TextEntry::make('durasi_magang')->label('Durasi Magang')->suffix(' minggu')->weight(FontWeight::Medium),
+                        TextEntry::make('bidang_diminati')->label('Bidang Diminati')->weight(FontWeight::Medium),
                     ])
                     ->columns(2)
                     ->extraAttributes(['class' => 'shadow-md rounded-lg border border-gray-200']),
@@ -210,30 +204,24 @@ class ViewPengajuanMagang extends ViewRecord
                         TextEntry::make('status')
                             ->label('Status')
                             ->badge()
-                            ->color(fn (string $state): string => match ($state) {
+                            ->color(fn(string $state): string => match ($state) {
                                 \App\Models\PengajuanMagang::STATUS_PENDING => 'warning',
                                 \App\Models\PengajuanMagang::STATUS_DITERIMA => 'success',
                                 \App\Models\PengajuanMagang::STATUS_DITOLAK => 'danger',
                                 \App\Models\PengajuanMagang::STATUS_SELESAI => 'success',
-                            })
-                            ->weight(FontWeight::Medium),
+                            }),
                         TextEntry::make('alasan_penolakan')
                             ->label('Alasan Penolakan')
                             ->default('Tidak ada alasan penolakan')
-                            ->visible(fn () => $this->record->status === \App\Models\PengajuanMagang::STATUS_DITOLAK && ($isAdmin || $isMahasiswa))
-                            ->weight(FontWeight::Medium),
+                            ->visible(fn() => $this->record->status === \App\Models\PengajuanMagang::STATUS_DITOLAK && ($isAdmin || $isMahasiswa)),
                         TextEntry::make('tanggal_verifikasi')
                             ->label('Tanggal Verifikasi')
-                            ->formatStateUsing(fn ($state) => $state
-                                ? \Carbon\Carbon::parse($state)->format('d F Y H:i')
-                                : 'Belum Diverifikasi')
-                            ->visible($isAdmin)
-                            ->weight(FontWeight::Medium),
+                            ->formatStateUsing(fn($state) => $state ? Carbon::parse($state)->format('d F Y H:i') : 'Belum Diverifikasi')
+                            ->visible($isAdmin),
                         TextEntry::make('verified_by')
                             ->label('Diverifikasi Oleh')
-                            ->getStateUsing(fn ($record) => $record->verifikator?->name ?? 'Belum Diverifikasi')
-                            ->visible($isAdmin)
-                            ->weight(FontWeight::Medium),
+                            ->getStateUsing(fn($record) => $record->verifikator?->name ?? 'Belum Diverifikasi')
+                            ->visible($isAdmin),
                     ])
                     ->columns(2)
                     ->extraAttributes(['class' => 'shadow-md rounded-lg border border-gray-200']),
@@ -242,37 +230,32 @@ class ViewPengajuanMagang extends ViewRecord
                     ->schema([
                         TextEntry::make('surat_permohonan')
                             ->label('Surat Permohonan')
-                            ->formatStateUsing(fn ($state) => $state
+                            ->formatStateUsing(fn($state) => $state
                                 ? new HtmlString('<a href="' . asset('storage/' . $state) . '" target="_blank" class="inline-flex items-center px-3 py-1 border border-primary-600 text-primary-600 text-sm rounded-md hover:bg-primary-50 hover:text-primary-800 font-medium transition-colors">Unduh Surat Permohonan</a>')
-                                : 'Tidak Tersedia')
-                            ->weight(FontWeight::Medium),
+                                : 'Tidak Tersedia'),
                         TextEntry::make('ktm')
                             ->label('Kartu Tanda Mahasiswa')
-                            ->formatStateUsing(fn ($state) => $state
+                            ->formatStateUsing(fn($state) => $state
                                 ? new HtmlString('<a href="' . asset('storage/' . $state) . '" target="_blank" class="inline-flex items-center px-3 py-1 border border-primary-600 text-primary-600 text-sm rounded-md hover:bg-primary-50 hover:text-primary-800 font-medium transition-colors">Unduh KTM</a>')
-                                : 'Tidak Tersedia')
-                            ->weight(FontWeight::Medium),
+                                : 'Tidak Tersedia'),
                         TextEntry::make('surat_balasan')
                             ->label('Surat Balasan')
-                            ->formatStateUsing(fn ($state) => $state
+                            ->formatStateUsing(fn($state) => $state
                                 ? new HtmlString('<a href="' . asset('storage/' . $state) . '" target="_blank" class="inline-flex items-center px-3 py-1 border border-primary-600 text-primary-600 text-sm rounded-md hover:bg-primary-50 hover:text-primary-800 font-medium transition-colors">Unduh Surat Balasan</a>')
                                 : 'Tidak Tersedia')
-                            ->visible($isAdmin || ($isMahasiswa && $this->record->isDiterima()))
-                            ->weight(FontWeight::Medium),
+                            ->visible($isAdmin || ($isMahasiswa && $this->record->isDiterima())),
                         TextEntry::make('final_laporan')
                             ->label('Laporan Akhir')
-                            ->formatStateUsing(fn ($state) => $state
+                            ->formatStateUsing(fn($state) => $state
                                 ? new HtmlString('<a href="' . asset('storage/' . $state) . '" target="_blank" class="inline-flex items-center px-3 py-1 border border-primary-600 text-primary-600 text-sm rounded-md hover:bg-primary-50 hover:text-primary-800 font-medium transition-colors">Unduh Laporan Akhir</a>')
                                 : 'Tidak Tersedia')
-                            ->visible($isAdmin)
-                            ->weight(FontWeight::Medium),
+                            ->visible($isAdmin),
                         TextEntry::make('sertifikat')
                             ->label('Sertifikat')
-                            ->formatStateUsing(fn ($state) => $state
+                            ->formatStateUsing(fn($state) => $state
                                 ? new HtmlString('<a href="' . asset('storage/' . $state) . '" target="_blank" class="inline-flex items-center px-3 py-1 border border-primary-600 text-primary-600 text-sm rounded-md hover:bg-primary-50 hover:text-primary-800 font-medium transition-colors">Unduh Sertifikat</a>')
                                 : 'Tidak Tersedia')
-                            ->visible($isAdmin)
-                            ->weight(FontWeight::Medium),
+                            ->visible($isAdmin),
                     ])
                     ->columns(1)
                     ->extraAttributes(['class' => 'shadow-md rounded-lg border border-gray-200']),
