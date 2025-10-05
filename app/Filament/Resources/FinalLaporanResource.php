@@ -383,7 +383,9 @@ class FinalLaporanResource extends Resource
                             'qr_code_path' => Storage::disk('public')->path($qrCodePath),
                             'tanggal_verifikasi' => now()->format('d F Y'),
                             'verified_by' => Auth::user()->name,
+                            'id_pengajuan' => $record->id,
                         ];
+
 
                         // Render the template content
                         $renderedContent = Blade::render($template->content_template, $pdfData);
