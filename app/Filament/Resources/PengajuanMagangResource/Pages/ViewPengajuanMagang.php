@@ -177,88 +177,136 @@ class ViewPengajuanMagang extends ViewRecord
         return Infolist::make()
             ->record($this->record)
             ->schema([
-                Section::make('Informasi Mahasiswa')
-                    ->schema([
-                        TextEntry::make('mahasiswa.nim')->label('NIM')->weight(FontWeight::Medium),
-                        TextEntry::make('mahasiswa.user.name')->label('Nama Mahasiswa')->weight(FontWeight::Medium),
-                        TextEntry::make('pembimbing.user.name')
-                            ->label('Nama Pembimbing')
-                            ->default('Belum Ditentukan')
-                            ->visible($isAdmin || ($isMahasiswa && $this->record->pembimbing_id)),
-                    ])
-                    ->columns(2)
-                    ->extraAttributes(['class' => 'shadow-md rounded-lg border border-gray-200']),
-
-                Section::make('Detail Pengajuan')
-                    ->schema([
-                        TextEntry::make('tanggal_mulai')->label('Tanggal Mulai')->date('d F Y')->weight(FontWeight::Medium),
-                        TextEntry::make('tanggal_selesai')->label('Tanggal Selesai')->date('d F Y')->weight(FontWeight::Medium),
-                        TextEntry::make('durasi_magang')->label('Durasi Magang')->suffix(' minggu')->weight(FontWeight::Medium),
-                        TextEntry::make('bidang_diminati')->label('Bidang Diminati')->weight(FontWeight::Medium),
-                    ])
-                    ->columns(2)
-                    ->extraAttributes(['class' => 'shadow-md rounded-lg border border-gray-200']),
-
-                Section::make('Status dan Verifikasi')
+                                Section::make('Status Pengajuan')
                     ->schema([
                         TextEntry::make('status')
-                            ->label('Status')
+                            ->label('Status Pengajuan')
                             ->badge()
+                            ->formatStateUsing(fn(string $state): string => match ($state) {
+                                \App\Models\PengajuanMagang::STATUS_PENDING => 'Sedang Diproses',
+                                \App\Models\PengajuanMagang::STATUS_DITERIMA => 'Diterima',
+                                \App\Models\PengajuanMagang::STATUS_DITOLAK => 'Ditolak',
+                                \App\Models\PengajuanMagang::STATUS_SELESAI => 'Selesai',
+                            })
                             ->color(fn(string $state): string => match ($state) {
                                 \App\Models\PengajuanMagang::STATUS_PENDING => 'warning',
                                 \App\Models\PengajuanMagang::STATUS_DITERIMA => 'success',
                                 \App\Models\PengajuanMagang::STATUS_DITOLAK => 'danger',
                                 \App\Models\PengajuanMagang::STATUS_SELESAI => 'success',
+                            })
+                            ->weight(FontWeight::Bold)
+                            ->extraAttributes(['class' => 'text-lg'])
+                            ->helperText(fn(string $state): string => match ($state) {
+                                \App\Models\PengajuanMagang::STATUS_PENDING => 'Pengajuan Anda sedang ditinjau oleh admin. Harap menunggu konfirmasi.',
+                                \App\Models\PengajuanMagang::STATUS_DITERIMA => 'Pengajuan Anda telah disetujui. Silakan unduh surat balasan di bagian Dokumen Terkait.',
+                                \App\Models\PengajuanMagang::STATUS_DITOLAK => 'Pengajuan Anda ditolak. Lihat alasan penolakan di bawah untuk informasi lebih lanjut.',
+                                \App\Models\PengajuanMagang::STATUS_SELESAI => 'Magang Anda telah selesai. Terima kasih atas partisipasinya.',
                             }),
                         TextEntry::make('alasan_penolakan')
                             ->label('Alasan Penolakan')
                             ->default('Tidak ada alasan penolakan')
-                            ->visible(fn() => $this->record->status === \App\Models\PengajuanMagang::STATUS_DITOLAK && ($isAdmin || $isMahasiswa)),
+                            ->visible(fn() => $this->record->status === \App\Models\PengajuanMagang::STATUS_DITOLAK && ($isAdmin || $isMahasiswa))
+                            ->weight(FontWeight::Medium)
+                            ->color('danger')
+                            ->extraAttributes(['class' => 'bg-red-50 p-4 rounded-md text-base']),
                         TextEntry::make('tanggal_verifikasi')
                             ->label('Tanggal Verifikasi')
                             ->formatStateUsing(fn($state) => $state ? Carbon::parse($state)->format('d F Y H:i') : 'Belum Diverifikasi')
-                            ->visible($isAdmin),
+                            ->visible($isAdmin)
+                            ->weight(FontWeight::Medium)
+                            ->extraAttributes(['class' => 'text-base']),
                         TextEntry::make('verified_by')
                             ->label('Diverifikasi Oleh')
                             ->getStateUsing(fn($record) => $record->verifikator?->name ?? 'Belum Diverifikasi')
-                            ->visible($isAdmin),
+                            ->visible($isAdmin)
+                            ->weight(FontWeight::Medium)
+                            ->extraAttributes(['class' => 'text-base']),
+                    ])
+                    ->columns(1)
+                    ->extraAttributes(['class' => 'shadow-md rounded-lg border border-gray-200 p-6 bg-white']),
+
+                Section::make('Informasi Mahasiswa')
+                    ->schema([
+                        TextEntry::make('mahasiswa.nim')
+                            ->label('NIM')
+                            ->weight(FontWeight::Medium)
+                            ->color('primary')
+                            ->extraAttributes(['class' => 'text-lg']),
+                        TextEntry::make('mahasiswa.user.name')
+                            ->label('Nama Mahasiswa')
+                            ->weight(FontWeight::Bold)
+                            ->color('primary')
+                            ->extraAttributes(['class' => 'text-lg']),
+                        TextEntry::make('pembimbing.user.name')
+                            ->label('Nama Pembimbing')
+                            ->default('Belum Ditentukan')
+                            ->visible($isAdmin || ($isMahasiswa && $this->record->pembimbing_id))
+                            ->weight(FontWeight::Medium)
+                            ->extraAttributes(['class' => 'text-base']),
                     ])
                     ->columns(2)
-                    ->extraAttributes(['class' => 'shadow-md rounded-lg border border-gray-200']),
+                    ->extraAttributes(['class' => 'shadow-md rounded-lg border border-gray-200 p-6 bg-white']),
+
+                Section::make('Detail Pengajuan')
+                    ->schema([
+                        TextEntry::make('tanggal_mulai')
+                            ->label('Tanggal Mulai')
+                            ->date('d F Y')
+                            ->weight(FontWeight::Medium)
+                            ->extraAttributes(['class' => 'text-base']),
+                        TextEntry::make('tanggal_selesai')
+                            ->label('Tanggal Selesai')
+                            ->date('d F Y')
+                            ->weight(FontWeight::Medium)
+                            ->extraAttributes(['class' => 'text-base']),
+                        TextEntry::make('durasi_magang')
+                            ->label('Durasi Magang')
+                            ->suffix(' minggu')
+                            ->weight(FontWeight::Medium)
+                            ->extraAttributes(['class' => 'text-base']),
+                        TextEntry::make('bidang_diminati')
+                            ->label('Bidang Diminati')
+                            ->weight(FontWeight::Medium)
+                            ->extraAttributes(['class' => 'text-base']),
+                    ])
+                    ->columns(2)
+                    ->extraAttributes(['class' => 'shadow-md rounded-lg border border-gray-200 p-6 bg-white']),
+
+
 
                 Section::make('Dokumen Terkait')
                     ->schema([
                         TextEntry::make('surat_permohonan')
                             ->label('Surat Permohonan')
                             ->formatStateUsing(fn($state) => $state
-                                ? new HtmlString('<a href="' . asset('storage/' . $state) . '" target="_blank" class="inline-flex items-center px-3 py-1 border border-primary-600 text-primary-600 text-sm rounded-md hover:bg-primary-50 hover:text-primary-800 font-medium transition-colors">Unduh Surat Permohonan</a>')
+                                ? new HtmlString('<a href="' . asset('storage/' . $state) . '" target="_blank" class="inline-flex items-center px-4 py-2 bg-primary-600 text-white text-sm rounded-md hover:bg-primary-700 font-medium transition-colors">Unduh Surat Permohonan</a>')
                                 : 'Tidak Tersedia'),
                         TextEntry::make('ktm')
                             ->label('Kartu Tanda Mahasiswa')
                             ->formatStateUsing(fn($state) => $state
-                                ? new HtmlString('<a href="' . asset('storage/' . $state) . '" target="_blank" class="inline-flex items-center px-3 py-1 border border-primary-600 text-primary-600 text-sm rounded-md hover:bg-primary-50 hover:text-primary-800 font-medium transition-colors">Unduh KTM</a>')
+                                ? new HtmlString('<a href="' . asset('storage/' . $state) . '" target="_blank" class="inline-flex items-center px-4 py-2 bg-primary-600 text-white text-sm rounded-md hover:bg-primary-700 font-medium transition-colors">Unduh KTM</a>')
                                 : 'Tidak Tersedia'),
                         TextEntry::make('surat_balasan')
                             ->label('Surat Balasan')
                             ->formatStateUsing(fn($state) => $state
-                                ? new HtmlString('<a href="' . asset('storage/' . $state) . '" target="_blank" class="inline-flex items-center px-3 py-1 border border-primary-600 text-primary-600 text-sm rounded-md hover:bg-primary-50 hover:text-primary-800 font-medium transition-colors">Unduh Surat Balasan</a>')
+                                ? new HtmlString('<a href="' . asset('storage/' . $state) . '" target="_blank" class="inline-flex items-center px-4 py-2 bg-primary-600 text-white text-sm rounded-md hover:bg-primary-700 font-medium transition-colors">Unduh Surat Balasan</a>')
                                 : 'Tidak Tersedia')
                             ->visible($isAdmin || ($isMahasiswa && $this->record->isDiterima())),
                         TextEntry::make('final_laporan')
                             ->label('Laporan Akhir')
                             ->formatStateUsing(fn($state) => $state
-                                ? new HtmlString('<a href="' . asset('storage/' . $state) . '" target="_blank" class="inline-flex items-center px-3 py-1 border border-primary-600 text-primary-600 text-sm rounded-md hover:bg-primary-50 hover:text-primary-800 font-medium transition-colors">Unduh Laporan Akhir</a>')
+                                ? new HtmlString('<a href="' . asset('storage/' . $state) . '" target="_blank" class="inline-flex items-center px-4 py-2 bg-primary-600 text-white text-sm rounded-md hover:bg-primary-700 font-medium transition-colors">Unduh Laporan Akhir</a>')
                                 : 'Tidak Tersedia')
                             ->visible($isAdmin),
                         TextEntry::make('sertifikat')
                             ->label('Sertifikat')
                             ->formatStateUsing(fn($state) => $state
-                                ? new HtmlString('<a href="' . asset('storage/' . $state) . '" target="_blank" class="inline-flex items-center px-3 py-1 border border-primary-600 text-primary-600 text-sm rounded-md hover:bg-primary-50 hover:text-primary-800 font-medium transition-colors">Unduh Sertifikat</a>')
+                                ? new HtmlString('<a href="' . asset('storage/' . $state) . '" target="_blank" class="inline-flex items-center px-4 py-2 bg-primary-600 text-white text-sm rounded-md hover:bg-primary-700 font-medium transition-colors">Unduh Sertifikat</a>')
                                 : 'Tidak Tersedia')
                             ->visible($isAdmin),
                     ])
                     ->columns(1)
-                    ->extraAttributes(['class' => 'shadow-md rounded-lg border border-gray-200']),
+                    ->extraAttributes(['class' => 'shadow-md rounded-lg border border-gray-200 p-6 bg-white']),
             ]);
     }
 }
