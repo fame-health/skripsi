@@ -8,6 +8,8 @@ use Filament\Actions\Action;
 use Filament\Infolists\Infolist;
 use Filament\Infolists\Components\Section;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Infolists\Components\IconEntry;
+use Filament\Infolists\Components\ImageEntry;
 use Filament\Support\Enums\FontWeight;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\HtmlString;
@@ -29,37 +31,56 @@ class ViewPengajuanMagang extends ViewRecord
         $actions = [];
         $user = Auth::user();
         $isAdmin = $user->role === 'admin';
-        $isMahasiswa = $user->role === 'mahasiswa' && $user->mahasiswa && $this->record->mahasiswa_id === $user->mahasiswa->id;
+        $isMahasiswa = $user->role === 'mahasiswa' &&
+                       $user->mahasiswa &&
+                       $this->record->mahasiswa_id === $user->mahasiswa->id;
 
+        // Action Verifikasi untuk Admin
         if ($isAdmin && $this->record->status === \App\Models\PengajuanMagang::STATUS_PENDING) {
             $actions[] = Action::make('verify')
-                ->label('Verifikasi')
-                ->icon('heroicon-o-check-circle')
-                ->color('primary')
+                ->label('Verifikasi Pengajuan')
+                ->icon('heroicon-o-check-badge')
+                ->color('success')
+                ->size('lg')
                 ->form([
-                    Forms\Components\Select::make('status')
-                        ->label('Status Verifikasi')
-                        ->options([
-                            \App\Models\PengajuanMagang::STATUS_DITERIMA => 'Diterima',
-                            \App\Models\PengajuanMagang::STATUS_DITOLAK => 'Ditolak',
-                        ])
-                        ->required()
-                        ->reactive(),
-                    Forms\Components\Textarea::make('alasan_penolakan')
-                        ->label('Alasan Penolakan')
-                        ->rows(4)
-                        ->visible(fn ($get) => $get('status') === \App\Models\PengajuanMagang::STATUS_DITOLAK)
-                        ->required(fn ($get) => $get('status') === \App\Models\PengajuanMagang::STATUS_DITOLAK)
-                        ->placeholder('Masukkan alasan penolakan yang jelas dan konstruktif'),
-                    Forms\Components\Select::make('pembimbing_id')
-                        ->label('Pembimbing')
-                        ->relationship('pembimbing', 'user_id')
-                        ->getOptionLabelFromRecordUsing(fn ($record) => $record->user->name ?? 'Tanpa Nama')
-                        ->searchable()
-                        ->preload()
-                        ->required(fn ($get) => $get('status') === \App\Models\PengajuanMagang::STATUS_DITERIMA)
-                        ->visible(fn ($get) => $get('status') === \App\Models\PengajuanMagang::STATUS_DITERIMA)
-                        ->helperText('Pilih pembimbing untuk mahasiswa yang diterima'),
+                    Forms\Components\Grid::make(1)
+                        ->schema([
+                            Forms\Components\Section::make('Status Verifikasi')
+                                ->description('Pilih status dan lengkapi informasi yang diperlukan')
+                                ->icon('heroicon-o-clipboard-document-check')
+                                ->schema([
+                                    Forms\Components\Select::make('status')
+                                        ->label('Status Verifikasi')
+                                        ->options([
+                                            \App\Models\PengajuanMagang::STATUS_DITERIMA => 'Terima Pengajuan',
+                                            \App\Models\PengajuanMagang::STATUS_DITOLAK => 'Tolak Pengajuan',
+                                        ])
+                                        ->required()
+                                        ->reactive()
+                                        ->native(false)
+                                        ->helperText('Pilih status verifikasi untuk pengajuan ini'),
+
+                                    Forms\Components\Select::make('pembimbing_id')
+                                        ->label('Pembimbing Magang')
+                                        ->relationship('pembimbing', 'user_id')
+                                        ->getOptionLabelFromRecordUsing(fn ($record) => $record->user->name ?? 'Tanpa Nama')
+                                        ->searchable()
+                                        ->preload()
+                                        ->required(fn ($get) => $get('status') === \App\Models\PengajuanMagang::STATUS_DITERIMA)
+                                        ->visible(fn ($get) => $get('status') === \App\Models\PengajuanMagang::STATUS_DITERIMA)
+                                        ->helperText('Pilih pembimbing yang akan membimbing mahasiswa selama magang')
+                                        ->native(false),
+
+                                    Forms\Components\Textarea::make('alasan_penolakan')
+                                        ->label('Alasan Penolakan')
+                                        ->rows(5)
+                                        ->visible(fn ($get) => $get('status') === \App\Models\PengajuanMagang::STATUS_DITOLAK)
+                                        ->required(fn ($get) => $get('status') === \App\Models\PengajuanMagang::STATUS_DITOLAK)
+                                        ->placeholder('Jelaskan alasan penolakan secara detail dan konstruktif...')
+                                        ->helperText('Berikan alasan yang jelas untuk membantu mahasiswa memahami penolakan'),
+                                ])
+                                ->collapsible(),
+                        ]),
                 ])
                 ->action(function (array $data) use ($user) {
                     try {
@@ -76,10 +97,10 @@ class ViewPengajuanMagang extends ViewRecord
                                 $this->record->pembimbing_id = $data['pembimbing_id'];
                             }
 
-                            // Generate QR code
+                            // Generate QR Code
                             $validationUrl = url('/validate-internship/' . $this->record->id);
                             $qrCode = QrCode::create($validationUrl)
-                                ->setSize(100)
+                                ->setSize(200)
                                 ->setMargin(10);
                             $writer = new PngWriter();
                             $qrCodeImage = $writer->write($qrCode);
@@ -92,7 +113,7 @@ class ViewPengajuanMagang extends ViewRecord
                                 ->first();
 
                             if (!$template) {
-                                throw new \Exception('Tidak ada template surat penerimaan aktif!');
+                                throw new \Exception('Template surat penerimaan tidak ditemukan. Silakan aktifkan template terlebih dahulu.');
                             }
 
                             // Siapkan data untuk template
@@ -113,7 +134,14 @@ class ViewPengajuanMagang extends ViewRecord
                             $renderedContent = Blade::render($template->content_template, $pdfData);
 
                             // Generate PDF
-                            $pdf = Pdf::loadHTML($renderedContent);
+                            $pdf = Pdf::loadHTML($renderedContent)
+                                ->setPaper('a4', 'portrait')
+                                ->setOptions([
+                                    'isHtml5ParserEnabled' => true,
+                                    'isPhpEnabled' => true,
+                                    'defaultFont' => 'Arial'
+                                ]);
+
                             $pdfPath = 'pengajuan-magang/surat-balasan/surat_balasan_' . $this->record->id . '.pdf';
                             Storage::disk('public')->put($pdfPath, $pdf->output());
 
@@ -124,9 +152,10 @@ class ViewPengajuanMagang extends ViewRecord
                         $this->record->save();
 
                         Notification::make()
-                            ->title('Sukses')
-                            ->body('Pengajuan berhasil diverifikasi.')
+                            ->title('Verifikasi Berhasil!')
+                            ->body('Pengajuan magang telah berhasil diverifikasi.')
                             ->success()
+                            ->duration(5000)
                             ->send();
 
                         $this->refreshFormData([
@@ -138,32 +167,60 @@ class ViewPengajuanMagang extends ViewRecord
                             'pembimbing_id',
                         ]);
                     } catch (\Exception $e) {
-                        \Illuminate\Support\Facades\Log::error('Verifikasi Error: ' . $e->getMessage());
+                        \Illuminate\Support\Facades\Log::error('Verifikasi Error: ' . $e->getMessage(), [
+                            'pengajuan_id' => $this->record->id,
+                            'user_id' => $user->id,
+                            'trace' => $e->getTraceAsString()
+                        ]);
+
                         Notification::make()
-                            ->title('Error')
+                            ->title('Terjadi Kesalahan')
                             ->body('Gagal memverifikasi pengajuan: ' . $e->getMessage())
                             ->danger()
+                            ->duration(7000)
                             ->send();
                     }
                 })
                 ->requiresConfirmation()
-                ->modalHeading('Verifikasi Pengajuan')
-                ->modalDescription('Silakan pilih status verifikasi untuk pengajuan ini.')
-                ->modalSubmitActionLabel('Simpan Verifikasi');
+                ->modalHeading('Verifikasi Pengajuan Magang')
+                ->modalDescription('Pastikan Anda telah memeriksa semua dokumen dan informasi sebelum melakukan verifikasi.')
+                ->modalSubmitActionLabel('Verifikasi Sekarang')
+                ->modalWidth('2xl');
         }
 
-        // Tombol edit / hapus
+        // Tombol Edit & Hapus
         if ($isAdmin || ($isMahasiswa && $this->record->status === \App\Models\PengajuanMagang::STATUS_PENDING)) {
-            $actions[] = \Filament\Actions\EditAction::make();
-            $actions[] = \Filament\Actions\DeleteAction::make()->requiresConfirmation();
+            $actions[] = \Filament\Actions\EditAction::make()
+                ->color('warning')
+                ->icon('heroicon-o-pencil-square');
+
+            $actions[] = \Filament\Actions\DeleteAction::make()
+                ->requiresConfirmation()
+                ->modalHeading('Hapus Pengajuan')
+                ->modalDescription('Apakah Anda yakin ingin menghapus pengajuan ini? Tindakan ini tidak dapat dibatalkan.')
+                ->color('danger')
+                ->icon('heroicon-o-trash');
         }
 
-        // Tombol kembali
-        $actions[] = Action::make('back')
-            ->label('Kembali')
-            ->icon('heroicon-o-arrow-left')
-            ->url(fn() => $this->getResource()::getUrl('index'))
-            ->color('gray');
+        // Tombol Ajukan Ulang untuk Mahasiswa
+        if ($isMahasiswa && $this->record->status === \App\Models\PengajuanMagang::STATUS_DITOLAK) {
+            $actions[] = Action::make('ajukan_ulang')
+                ->label('Ajukan Ulang')
+                ->icon('heroicon-o-arrow-path')
+                ->color('primary')
+                ->url(fn() => $this->getResource()::getUrl('create'))
+                ->tooltip('Buat pengajuan baru berdasarkan feedback yang diberikan');
+        }
+
+        // Action Download Surat Balasan (untuk mahasiswa yang diterima)
+        if ($isMahasiswa && $this->record->isDiterima() && $this->record->surat_balasan) {
+            $actions[] = Action::make('download_surat')
+                ->label('Unduh Surat Penerimaan')
+                ->icon('heroicon-o-arrow-down-tray')
+                ->color('success')
+                ->url(fn() => asset('storage/' . $this->record->surat_balasan))
+                ->openUrlInNewTab();
+        }
 
         return $actions;
     }
@@ -172,16 +229,20 @@ class ViewPengajuanMagang extends ViewRecord
     {
         $user = Auth::user();
         $isAdmin = $user->role === 'admin';
-        $isMahasiswa = $user->role === 'mahasiswa' && $user->mahasiswa && $this->record->mahasiswa_id === $user->mahasiswa->id;
+        $isMahasiswa = $user->role === 'mahasiswa' &&
+                       $user->mahasiswa &&
+                       $this->record->mahasiswa_id === $user->mahasiswa->id;
 
         return Infolist::make()
             ->record($this->record)
             ->schema([
-                                Section::make('Status Pengajuan')
+                // Status Section dengan Visual Timeline
+                Section::make()
                     ->schema([
                         TextEntry::make('status')
                             ->label('Status Pengajuan')
                             ->badge()
+                            ->size('lg')
                             ->formatStateUsing(fn(string $state): string => match ($state) {
                                 \App\Models\PengajuanMagang::STATUS_PENDING => 'Sedang Diproses',
                                 \App\Models\PengajuanMagang::STATUS_DITERIMA => 'Diterima',
@@ -192,121 +253,249 @@ class ViewPengajuanMagang extends ViewRecord
                                 \App\Models\PengajuanMagang::STATUS_PENDING => 'warning',
                                 \App\Models\PengajuanMagang::STATUS_DITERIMA => 'success',
                                 \App\Models\PengajuanMagang::STATUS_DITOLAK => 'danger',
-                                \App\Models\PengajuanMagang::STATUS_SELESAI => 'success',
+                                \App\Models\PengajuanMagang::STATUS_SELESAI => 'info',
                             })
-                            ->weight(FontWeight::Bold)
-                            ->extraAttributes(['class' => 'text-lg'])
-                            ->helperText(fn(string $state): string => match ($state) {
-                                \App\Models\PengajuanMagang::STATUS_PENDING => 'Pengajuan Anda sedang ditinjau oleh admin. Harap menunggu konfirmasi.',
-                                \App\Models\PengajuanMagang::STATUS_DITERIMA => 'Pengajuan Anda telah disetujui. Silakan unduh surat balasan di bagian Dokumen Terkait.',
-                                \App\Models\PengajuanMagang::STATUS_DITOLAK => 'Pengajuan Anda ditolak. Lihat alasan penolakan di bawah untuk informasi lebih lanjut.',
-                                \App\Models\PengajuanMagang::STATUS_SELESAI => 'Magang Anda telah selesai. Terima kasih atas partisipasinya.',
-                            }),
+                            ->icon(fn(string $state): string => match ($state) {
+                                \App\Models\PengajuanMagang::STATUS_PENDING => 'heroicon-o-clock',
+                                \App\Models\PengajuanMagang::STATUS_DITERIMA => 'heroicon-o-check-circle',
+                                \App\Models\PengajuanMagang::STATUS_DITOLAK => 'heroicon-o-x-circle',
+                                \App\Models\PengajuanMagang::STATUS_SELESAI => 'heroicon-o-academic-cap',
+                            })
+                            ->weight(FontWeight::Bold),
+
                         TextEntry::make('alasan_penolakan')
-                            ->label('Alasan Penolakan')
-                            ->default('Tidak ada alasan penolakan')
+                            ->label('Keterangan')
+                            ->icon('heroicon-o-exclamation-triangle')
                             ->visible(fn() => $this->record->status === \App\Models\PengajuanMagang::STATUS_DITOLAK && ($isAdmin || $isMahasiswa))
                             ->weight(FontWeight::Medium)
                             ->color('danger')
-                            ->extraAttributes(['class' => 'bg-red-50 p-4 rounded-md text-base']),
+                            ->columnSpanFull()
+                            ->formatStateUsing(fn($state) => $state ?: 'Tidak ada keterangan')
+                            ->extraAttributes([
+                                'class' => 'bg-red-50 border border-red-200 rounded-lg p-3',
+                            ]),
+
                         TextEntry::make('tanggal_verifikasi')
                             ->label('Tanggal Verifikasi')
-                            ->formatStateUsing(fn($state) => $state ? Carbon::parse($state)->format('d F Y H:i') : 'Belum Diverifikasi')
-                            ->visible($isAdmin)
+                            ->icon('heroicon-o-calendar')
+                            ->formatStateUsing(fn($state) => $state
+                                ? Carbon::parse($state)->translatedFormat('l, d F Y - H:i') . ' WIB'
+                                : 'Menunggu verifikasi')
+                            ->visible(fn() => $this->record->tanggal_verifikasi || $isAdmin)
                             ->weight(FontWeight::Medium)
-                            ->extraAttributes(['class' => 'text-base']),
+                            ->color('gray'),
+
                         TextEntry::make('verified_by')
                             ->label('Diverifikasi Oleh')
-                            ->getStateUsing(fn($record) => $record->verifikator?->name ?? 'Belum Diverifikasi')
-                            ->visible($isAdmin)
+                            ->icon('heroicon-o-user-circle')
+                            ->getStateUsing(fn($record) => $record->verifikator?->name ?? 'Belum diverifikasi')
+                            ->visible(fn() => $this->record->verified_by || $isAdmin)
                             ->weight(FontWeight::Medium)
-                            ->extraAttributes(['class' => 'text-base']),
-                    ])
-                    ->columns(1)
-                    ->extraAttributes(['class' => 'shadow-md rounded-lg border border-gray-200 p-6 bg-white']),
+                            ->color('gray'),
 
+
+                    ])
+                    ->heading('Status Pengajuan')
+                    ->description(fn() => $this->getStatusDescription())
+                    ->icon('heroicon-o-clipboard-document-check')
+                    ->columns(3)
+                    ->compact(),
+
+                // Informasi Mahasiswa
                 Section::make('Informasi Mahasiswa')
+                    ->icon('heroicon-o-user')
+                    ->description('Data pribadi dan akademik mahasiswa')
                     ->schema([
                         TextEntry::make('mahasiswa.nim')
-                            ->label('NIM')
-                            ->weight(FontWeight::Medium)
-                            ->color('primary')
-                            ->extraAttributes(['class' => 'text-lg']),
-                        TextEntry::make('mahasiswa.user.name')
-                            ->label('Nama Mahasiswa')
+                            ->label('Nomor Induk Mahasiswa')
+                            ->icon('heroicon-o-identification')
                             ->weight(FontWeight::Bold)
                             ->color('primary')
-                            ->extraAttributes(['class' => 'text-lg']),
+                            ->copyable()
+                            ->copyMessage('NIM berhasil disalin!')
+                            ->copyMessageDuration(1500),
+
+                        TextEntry::make('mahasiswa.user.name')
+                            ->label('Nama Lengkap')
+                            ->icon('heroicon-o-user')
+                            ->weight(FontWeight::Bold)
+                            ->color('primary')
+                            ->size('lg'),
+
+                        TextEntry::make('mahasiswa.user.email')
+                            ->label('Email')
+                            ->icon('heroicon-o-envelope')
+                            ->copyable()
+                            ->copyMessage('Email berhasil disalin!')
+                            ->visible($isAdmin),
+
                         TextEntry::make('pembimbing.user.name')
-                            ->label('Nama Pembimbing')
-                            ->default('Belum Ditentukan')
+                            ->label('Pembimbing Magang')
+                            ->icon('heroicon-o-academic-cap')
+                            ->default('Belum ditentukan')
+                            ->placeholder('Menunggu penugasan pembimbing')
                             ->visible($isAdmin || ($isMahasiswa && $this->record->pembimbing_id))
-                            ->weight(FontWeight::Medium)
-                            ->extraAttributes(['class' => 'text-base']),
+                            ->weight(FontWeight::SemiBold)
+                            ->badge()
+                            ->color(fn($state) => $state === 'Belum ditentukan' ? 'gray' : 'success'),
                     ])
                     ->columns(2)
-                    ->extraAttributes(['class' => 'shadow-md rounded-lg border border-gray-200 p-6 bg-white']),
+                    ->collapsible(),
 
-                Section::make('Detail Pengajuan')
+                // Detail Periode Magang
+                Section::make('Periode Magang')
+                    ->icon('heroicon-o-calendar-days')
+                    ->description('Jadwal dan durasi pelaksanaan magang')
                     ->schema([
                         TextEntry::make('tanggal_mulai')
                             ->label('Tanggal Mulai')
-                            ->date('d F Y')
-                            ->weight(FontWeight::Medium)
-                            ->extraAttributes(['class' => 'text-base']),
+                            ->icon('heroicon-o-play-circle')
+                            ->date('l, d F Y')
+                            ->weight(FontWeight::Bold)
+                            ->color('success'),
+
                         TextEntry::make('tanggal_selesai')
                             ->label('Tanggal Selesai')
-                            ->date('d F Y')
-                            ->weight(FontWeight::Medium)
-                            ->extraAttributes(['class' => 'text-base']),
+                            ->icon('heroicon-o-flag')
+                            ->date('l, d F Y')
+                            ->weight(FontWeight::Bold)
+                            ->color('danger'),
+
                         TextEntry::make('durasi_magang')
-                            ->label('Durasi Magang')
+                            ->label('Total Durasi')
+                            ->icon('heroicon-o-clock')
                             ->suffix(' minggu')
-                            ->weight(FontWeight::Medium)
-                            ->extraAttributes(['class' => 'text-base']),
+                            ->badge()
+                            ->color('info')
+                            ->weight(FontWeight::Bold),
+
                         TextEntry::make('bidang_diminati')
-                            ->label('Bidang Diminati')
-                            ->weight(FontWeight::Medium)
-                            ->extraAttributes(['class' => 'text-base']),
+                            ->label('Bidang/Divisi')
+                            ->icon('heroicon-o-briefcase')
+                            ->badge()
+                            ->color('warning')
+                            ->weight(FontWeight::SemiBold)
+                            ->size('lg'),
                     ])
                     ->columns(2)
-                    ->extraAttributes(['class' => 'shadow-md rounded-lg border border-gray-200 p-6 bg-white']),
+                    ->collapsible(),
 
-
-
-                Section::make('Dokumen Terkait')
+                // Dokumen Pendukung
+                Section::make('Dokumen Pendukung')
+                    ->icon('heroicon-o-document-text')
+                    ->description('Berkas dan dokumen yang dilampirkan')
                     ->schema([
                         TextEntry::make('surat_permohonan')
                             ->label('Surat Permohonan')
-                            ->formatStateUsing(fn($state) => $state
-                                ? new HtmlString('<a href="' . asset('storage/' . $state) . '" target="_blank" class="inline-flex items-center px-4 py-2 bg-primary-600 text-white text-sm rounded-md hover:bg-primary-700 font-medium transition-colors">Unduh Surat Permohonan</a>')
-                                : 'Tidak Tersedia'),
+                            ->icon('heroicon-o-document-text')
+                            ->formatStateUsing(fn($state) => $state ? 'Tersedia' : 'Tidak tersedia')
+                            ->badge()
+                            ->color(fn($state) => $state ? 'success' : 'gray')
+                            ->url(fn($state) => $state ? asset('storage/' . $state) : null)
+                            ->openUrlInNewTab()
+                            ->suffixAction(
+                                \Filament\Infolists\Components\Actions\Action::make('download_surat_permohonan')
+                                    ->label('Unduh')
+                                    ->icon('heroicon-o-arrow-down-tray')
+                                    ->color('primary')
+                                    ->button()
+                                    ->url(fn($record) => $record->surat_permohonan ? asset('storage/' . $record->surat_permohonan) : null)
+                                    ->openUrlInNewTab()
+                                    ->visible(fn($record) => $record->surat_permohonan)
+                            ),
+
                         TextEntry::make('ktm')
                             ->label('Kartu Tanda Mahasiswa')
-                            ->formatStateUsing(fn($state) => $state
-                                ? new HtmlString('<a href="' . asset('storage/' . $state) . '" target="_blank" class="inline-flex items-center px-4 py-2 bg-primary-600 text-white text-sm rounded-md hover:bg-primary-700 font-medium transition-colors">Unduh KTM</a>')
-                                : 'Tidak Tersedia'),
+                            ->icon('heroicon-o-identification')
+                            ->formatStateUsing(fn($state) => $state ? 'Tersedia' : 'Tidak tersedia')
+                            ->badge()
+                            ->color(fn($state) => $state ? 'success' : 'gray')
+                            ->url(fn($state) => $state ? asset('storage/' . $state) : null)
+                            ->openUrlInNewTab()
+                            ->suffixAction(
+                                \Filament\Infolists\Components\Actions\Action::make('download_ktm')
+                                    ->label('Unduh')
+                                    ->icon('heroicon-o-arrow-down-tray')
+                                    ->color('success')
+                                    ->button()
+                                    ->url(fn($record) => $record->ktm ? asset('storage/' . $record->ktm) : null)
+                                    ->openUrlInNewTab()
+                                    ->visible(fn($record) => $record->ktm)
+                            ),
+
                         TextEntry::make('surat_balasan')
-                            ->label('Surat Balasan')
-                            ->formatStateUsing(fn($state) => $state
-                                ? new HtmlString('<a href="' . asset('storage/' . $state) . '" target="_blank" class="inline-flex items-center px-4 py-2 bg-primary-600 text-white text-sm rounded-md hover:bg-primary-700 font-medium transition-colors">Unduh Surat Balasan</a>')
-                                : 'Tidak Tersedia')
+                            ->label('Surat Penerimaan')
+                            ->icon('heroicon-o-document-check')
+                            ->formatStateUsing(fn($state) => $state ? 'Tersedia' : 'Belum tersedia')
+                            ->badge()
+                            ->color(fn($state) => $state ? 'success' : 'gray')
+                            ->url(fn($state) => $state ? asset('storage/' . $state) : null)
+                            ->openUrlInNewTab()
+                            ->suffixAction(
+                                \Filament\Infolists\Components\Actions\Action::make('download_surat_balasan')
+                                    ->label('Unduh')
+                                    ->icon('heroicon-o-arrow-down-tray')
+                                    ->color('info')
+                                    ->button()
+                                    ->url(fn($record) => $record->surat_balasan ? asset('storage/' . $record->surat_balasan) : null)
+                                    ->openUrlInNewTab()
+                                    ->visible(fn($record) => $record->surat_balasan)
+                            )
                             ->visible($isAdmin || ($isMahasiswa && $this->record->isDiterima())),
+
                         TextEntry::make('final_laporan')
-                            ->label('Laporan Akhir')
-                            ->formatStateUsing(fn($state) => $state
-                                ? new HtmlString('<a href="' . asset('storage/' . $state) . '" target="_blank" class="inline-flex items-center px-4 py-2 bg-primary-600 text-white text-sm rounded-md hover:bg-primary-700 font-medium transition-colors">Unduh Laporan Akhir</a>')
-                                : 'Tidak Tersedia')
+                            ->label('Laporan Akhir Magang')
+                            ->icon('heroicon-o-document-chart-bar')
+                            ->formatStateUsing(fn($state) => $state ? 'Tersedia' : 'Belum tersedia')
+                            ->badge()
+                            ->color(fn($state) => $state ? 'success' : 'gray')
+                            ->url(fn($state) => $state ? asset('storage/' . $state) : null)
+                            ->openUrlInNewTab()
+                            ->suffixAction(
+                                \Filament\Infolists\Components\Actions\Action::make('download_laporan')
+                                    ->label('Unduh')
+                                    ->icon('heroicon-o-arrow-down-tray')
+                                    ->color('warning')
+                                    ->button()
+                                    ->url(fn($record) => $record->final_laporan ? asset('storage/' . $record->final_laporan) : null)
+                                    ->openUrlInNewTab()
+                                    ->visible(fn($record) => $record->final_laporan)
+                            )
                             ->visible($isAdmin),
+
                         TextEntry::make('sertifikat')
-                            ->label('Sertifikat')
-                            ->formatStateUsing(fn($state) => $state
-                                ? new HtmlString('<a href="' . asset('storage/' . $state) . '" target="_blank" class="inline-flex items-center px-4 py-2 bg-primary-600 text-white text-sm rounded-md hover:bg-primary-700 font-medium transition-colors">Unduh Sertifikat</a>')
-                                : 'Tidak Tersedia')
+                            ->label('Sertifikat Magang')
+                            ->icon('heroicon-o-trophy')
+                            ->formatStateUsing(fn($state) => $state ? 'Tersedia' : 'Belum tersedia')
+                            ->badge()
+                            ->color(fn($state) => $state ? 'success' : 'gray')
+                            ->url(fn($state) => $state ? asset('storage/' . $state) : null)
+                            ->openUrlInNewTab()
+                            ->suffixAction(
+                                \Filament\Infolists\Components\Actions\Action::make('download_sertifikat')
+                                    ->label('Unduh')
+                                    ->icon('heroicon-o-arrow-down-tray')
+                                    ->color('danger')
+                                    ->button()
+                                    ->url(fn($record) => $record->sertifikat ? asset('storage/' . $record->sertifikat) : null)
+                                    ->openUrlInNewTab()
+                                    ->visible(fn($record) => $record->sertifikat)
+                            )
                             ->visible($isAdmin),
                     ])
                     ->columns(1)
-                    ->extraAttributes(['class' => 'shadow-md rounded-lg border border-gray-200 p-6 bg-white']),
+                    ->collapsible(),
             ]);
+    }
+
+    protected function getStatusDescription(): string
+    {
+        return match ($this->record->status) {
+            \App\Models\PengajuanMagang::STATUS_PENDING => 'Pengajuan sedang dalam proses peninjauan oleh admin',
+            \App\Models\PengajuanMagang::STATUS_DITERIMA => 'Selamat! Pengajuan Anda telah disetujui',
+            \App\Models\PengajuanMagang::STATUS_DITOLAK => 'Pengajuan tidak dapat diproses saat ini',
+            \App\Models\PengajuanMagang::STATUS_SELESAI => 'Magang telah selesai dilaksanakan',
+            default => 'Status tidak diketahui',
+        };
     }
 }
