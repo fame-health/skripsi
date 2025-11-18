@@ -229,6 +229,18 @@
                 @endif
             </div>
         </div>
+                {{-- Footer Cetak --}}
+        <div class="p-3 border-t border-gray-200 dark:border-white/10 bg-white dark:bg-gray-900 sticky bottom-0 z-20">
+            <div class="flex items-center justify-between gap-2 bg-gray-50 dark:bg-gray-800 rounded-lg p-2 border border-gray-100 dark:border-gray-700 hover:border-gray-300 transition-colors group">
+                <div class="text-[10px] text-gray-500 dark:text-gray-400 pl-1 font-medium flex items-center gap-1.5">
+                    <x-heroicon-o-printer class="w-3.5 h-3.5 group-hover:text-primary-500 transition-colors" />
+                    Cetak Laporan
+                </div>
+                <div>
+                    <livewire:mahasiswa-print :steps="$steps" />
+                </div>
+            </div>
+        </div>
     </x-filament::section>
 </x-filament-widgets::widget>
 
