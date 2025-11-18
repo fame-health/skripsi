@@ -6,10 +6,13 @@ use Filament\Widgets\Widget;
 use Illuminate\Support\Facades\Auth;
 use App\Models\Mahasiswa;
 use App\Models\PengajuanMagang;
+use App\Models\LaporanMingguan;
+use App\Models\Penilaian;
 
 class ProgressSteps extends Widget
 {
     protected static string $view = 'filament.widgets.progress-steps';
+
     protected int|string|array $columnSpan = 'full';
 
     public static function canView(): bool
@@ -20,7 +23,6 @@ class ProgressSteps extends Widget
     public function getStepsData(): array
     {
         $user = Auth::user();
-
         $steps = [
             [
                 'title' => 'Isi Data Mahasiswa',
@@ -32,6 +34,7 @@ class ProgressSteps extends Widget
                 'status' => null,
                 'completed_at' => null,
                 'keterangan' => null,
+                'color' => 'gray', // Default color
             ],
             [
                 'title' => 'Pengajuan Magang',
@@ -43,6 +46,7 @@ class ProgressSteps extends Widget
                 'status' => null,
                 'completed_at' => null,
                 'keterangan' => null,
+                'color' => 'gray',
             ],
             [
                 'title' => 'Logbook',
@@ -54,6 +58,7 @@ class ProgressSteps extends Widget
                 'status' => null,
                 'completed_at' => null,
                 'keterangan' => null,
+                'color' => 'gray',
             ],
             [
                 'title' => 'Penilaian',
@@ -65,6 +70,7 @@ class ProgressSteps extends Widget
                 'status' => null,
                 'completed_at' => null,
                 'keterangan' => null,
+                'color' => 'gray',
             ],
             [
                 'title' => 'Laporan Akhir',
@@ -76,6 +82,7 @@ class ProgressSteps extends Widget
                 'status' => null,
                 'completed_at' => null,
                 'keterangan' => null,
+                'color' => 'gray',
             ],
         ];
 
@@ -85,12 +92,14 @@ class ProgressSteps extends Widget
             // Step 1: Mahasiswa
             if ($mahasiswa) {
                 $steps[0]['completed'] = true;
+                $steps[0]['color'] = 'success';
                 $steps[0]['url'] = route('filament.dashboard.resources.mahasiswas.edit', $mahasiswa->id);
                 $steps[0]['button_text'] = 'Edit Data';
                 $steps[0]['completed_at'] = $mahasiswa->created_at->format('d M Y');
                 $steps[0]['keterangan'] = 'Data mahasiswa telah diisi. Anda dapat mengedit jika diperlukan.';
             } else {
                 $steps[0]['active'] = true;
+                $steps[0]['color'] = 'warning';
                 $steps[0]['keterangan'] = 'Lengkapi data mahasiswa untuk memulai proses magang.';
             }
 
@@ -117,6 +126,15 @@ class ProgressSteps extends Widget
                         default => 'Pengajuan sedang dalam proses verifikasi.',
                     };
 
+                    // SET COLOR BASED ON STATUS
+                    $steps[1]['color'] = match ($pengajuan->status) {
+                        PengajuanMagang::STATUS_PENDING => 'warning',
+                        PengajuanMagang::STATUS_DITERIMA => 'success',
+                        PengajuanMagang::STATUS_DITOLAK => 'danger', // WARNA MERAH
+                        PengajuanMagang::STATUS_SELESAI => 'success',
+                        default => 'warning',
+                    };
+
                     if (in_array($pengajuan->status, [PengajuanMagang::STATUS_DITERIMA, PengajuanMagang::STATUS_SELESAI])) {
                         $steps[1]['completed'] = true;
                         $steps[1]['url'] = route('filament.dashboard.resources.pengajuan-magangs.index');
@@ -128,30 +146,91 @@ class ProgressSteps extends Widget
                     } elseif ($pengajuan->status === PengajuanMagang::STATUS_DITOLAK) {
                         $steps[1]['url'] = route('filament.dashboard.resources.pengajuan-magangs.create');
                         $steps[1]['button_text'] = 'Ajukan Ulang';
+                        $steps[1]['active'] = true; // Set as active untuk ditolak
                     }
 
-                    $steps[1]['active'] = !$steps[0]['active'] && !$steps[1]['completed'];
+                    // Update active status
+                    if ($pengajuan->status !== PengajuanMagang::STATUS_DITOLAK) {
+                        $steps[1]['active'] = !$steps[0]['active'] && !$steps[1]['completed'];
+                    }
                 } else {
                     $steps[1]['active'] = !$steps[0]['active'];
+                    $steps[1]['color'] = 'warning';
                     $steps[1]['status'] = 'Belum Diajukan';
                     $steps[1]['keterangan'] = 'Silakan ajukan magang dengan mengunggah surat permohonan dan KTM.';
+                }
+
+                // Step 3: Laporan Mingguan
+                if ($pengajuan && in_array($pengajuan->status, [PengajuanMagang::STATUS_DITERIMA, PengajuanMagang::STATUS_SELESAI])) {
+                    $durasiMagang = $pengajuan->durasi_magang ?? 0;
+                    $laporanDisetujui = LaporanMingguan::where('mahasiswa_id', $mahasiswa->id)
+                        ->where('status_approve', true)
+                        ->count();
+
+                    if ($laporanDisetujui >= $durasiMagang && $durasiMagang > 0) {
+                        $steps[2]['completed'] = true;
+                        $steps[2]['color'] = 'success';
+                        $steps[2]['completed_at'] = LaporanMingguan::where('mahasiswa_id', $mahasiswa->id)
+                            ->where('status_approve', true)
+                            ->latest('updated_at')
+                            ->first()?->updated_at
+                            ?->format('d M Y');
+                        $steps[2]['keterangan'] = 'Semua laporan mingguan telah disetujui.';
+                    } else {
+                        $steps[2]['active'] = !$steps[1]['active'] && $steps[1]['completed'];
+                        $steps[2]['color'] = $steps[2]['active'] ? 'warning' : 'gray';
+                        $steps[2]['keterangan'] = 'Lengkapi laporan mingguan sesuai durasi magang.';
+                    }
+                }
+
+                // Step 4: Penilaian
+                if ($steps[2]['completed']) {
+                    $penilaian = Penilaian::where('mahasiswa_id', $mahasiswa->id)
+                        ->whereNotNull('nilai')
+                        ->first();
+
+                    if ($penilaian) {
+                        $steps[3]['completed'] = true;
+                        $steps[3]['color'] = 'success';
+                        $steps[3]['completed_at'] = $penilaian->updated_at?->format('d M Y');
+                        $steps[3]['keterangan'] = 'Penilaian telah diberikan oleh pembimbing.';
+                    } else {
+                        $steps[3]['active'] = true;
+                        $steps[3]['color'] = 'info';
+                        $steps[3]['keterangan'] = 'Menunggu penilaian dari pembimbing.';
+                    }
+                }
+
+                // Step 5: Laporan Akhir
+                if ($steps[3]['completed']) {
+                    if ($pengajuan && $pengajuan->final_laporan && $pengajuan->sertifikat) {
+                        $steps[4]['completed'] = true;
+                        $steps[4]['color'] = 'success';
+                        $steps[4]['completed_at'] = $pengajuan->updated_at?->format('d M Y');
+                        $steps[4]['keterangan'] = 'Laporan akhir dan sertifikat telah diunggah.';
+                    } else {
+                        $steps[4]['active'] = true;
+                        $steps[4]['color'] = 'warning';
+                        $steps[4]['keterangan'] = 'Unggah laporan akhir untuk menyelesaikan magang.';
+                    }
                 }
             }
         }
 
-        // Tentukan warna status
-foreach ($steps as &$step) {
-    // CEK DITOLAK DULU (PRIORITAS TERTINGGI)
-    if (isset($step['status']) && $step['status'] === 'Ditolak') {
-        $step['status_color'] = 'danger';
-    } elseif ($step['completed']) {
-        $step['status_color'] = 'success';
-    } elseif ($step['active']) {
-        $step['status_color'] = 'warning';
-    } else {
-        $step['status_color'] = 'neutral';
-    }
-}
+        // Tambahkan warna status (untuk backward compatibility)
+        foreach ($steps as &$step) {
+            if (isset($step['status']) && strtolower($step['status']) === 'ditolak') {
+                $step['status_color'] = 'danger'; // merah
+                $step['color'] = 'danger'; // Pastikan color juga di-set
+            } elseif ($step['completed']) {
+                $step['status_color'] = 'success'; // hijau
+                $step['status'] = $step['status'] ?? 'Selesai';
+            } elseif ($step['active']) {
+                $step['status_color'] = 'warning'; // kuning
+            } else {
+                $step['status_color'] = 'neutral'; // abu-abu
+            }
+        }
 
         return $steps;
     }
